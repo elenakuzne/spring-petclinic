@@ -17,8 +17,11 @@
 package org.springframework.samples.petclinic.owner;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledInNativeImage;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Page;
@@ -246,6 +249,206 @@ class OwnerControllerTests {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/owners/" + pathOwnerId + "/edit"))
 			.andExpect(flash().attributeExists("error"));
+	}
+
+	/**
+	 * Additional tests for Owner telephone validation
+	 */
+	@Nested
+	class OwnerTelephoneValidationTests {
+
+		@Test
+		void testProcessCreationFormWithValidTelephoneExactly10Digits() throws Exception {
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "John")
+					.param("lastName", "Doe")
+					.param("address", "123 Main St")
+					.param("city", "Boston")
+					.param("telephone", "1234567890"))
+				.andExpect(status().is3xxRedirection());
+		}
+
+		@ParameterizedTest
+		@ValueSource(strings = {
+			"123456789",
+			"12345678901",
+			"123abc7890",
+			"123 456 7890",
+			"123-456-7890"
+		})
+		void testProcessCreationFormWithInvalidTelephone(String telephone) throws Exception {
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "John")
+					.param("lastName", "Doe")
+					.param("address", "123 Main St")
+					.param("city", "Budapest")
+					.param("telephone", telephone))
+				.andExpect(status().isOk())
+				.andExpect(model().attributeHasErrors("owner"))
+				.andExpect(model().attributeHasFieldErrors("owner", "telephone"))
+				.andExpect(view().name("owners/createOrUpdateOwnerForm"));
+		}
+
+	}
+
+	/**
+	 * Additional tests for Owner name and address validation
+	 */
+	@Nested
+	class OwnerFieldValidationTests {
+
+		@Test
+		void testProcessCreationFormWithSpecialCharactersInName() throws Exception {
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "Mary-Jane")
+					.param("lastName", "O'Brien")
+					.param("address", "456 Oak Ave")
+					.param("city", "New York")
+					.param("telephone", "5551234567"))
+				.andExpect(status().is3xxRedirection());
+		}
+
+		@Test
+		void testProcessCreationFormWithVeryLongAddress() throws Exception {
+			String longAddress = "A".repeat(255);
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "John")
+					.param("lastName", "Doe")
+					.param("address", longAddress)
+					.param("city", "City")
+					.param("telephone", "1234567890"))
+				.andExpect(status().is3xxRedirection());
+		}
+
+		@Test
+		void testProcessCreationFormWithEmptyFirstName() throws Exception {
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "")
+					.param("lastName", "Doe")
+					.param("address", "123 Main St")
+					.param("city", "Boston")
+					.param("telephone", "1234567890"))
+				.andExpect(status().isOk())
+				.andExpect(model().attributeHasErrors("owner"))
+				.andExpect(model().attributeHasFieldErrors("owner", "firstName"))
+				.andExpect(view().name("owners/createOrUpdateOwnerForm"));
+		}
+
+		@Test
+		void testProcessCreationFormWithWhitespaceOnlyLastName() throws Exception {
+			mockMvc
+				.perform(post("/owners/new").param("firstName", "John")
+					.param("lastName", "   \t  ")
+					.param("address", "123 Main St")
+					.param("city", "Boston")
+					.param("telephone", "1234567890"))
+				.andExpect(status().isOk())
+				.andExpect(model().attributeHasErrors("owner"))
+				.andExpect(model().attributeHasFieldErrors("owner", "lastName"))
+				.andExpect(view().name("owners/createOrUpdateOwnerForm"));
+		}
+
+	}
+
+	/**
+	 * Additional tests for Owner search functionality
+	 */
+	@Nested
+	class OwnerSearchTests {
+
+		@Test
+		void testProcessFindFormWithLeadingAndTrailingWhitespace() throws Exception {
+			Page<Owner> tasks = new PageImpl<>(List.of(george()));
+			when(owners.findByLastNameStartingWith(anyString(), any(Pageable.class))).thenReturn(tasks);
+
+			mockMvc.perform(get("/owners?page=1").param("lastName", "  Franklin  "))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(view().name("redirect:/owners/" + TEST_OWNER_ID));
+		}
+
+		@Test
+		void testProcessFindFormWithLowercaseSearch() throws Exception {
+			Page<Owner> tasks = new PageImpl<>(List.of(george()));
+			when(owners.findByLastNameStartingWith(anyString(), any(Pageable.class))).thenReturn(tasks);
+
+			mockMvc.perform(get("/owners?page=1").param("lastName", "franklin")).andExpect(status().is3xxRedirection());
+		}
+
+		@Test
+		void testProcessFindFormWithEmptyStringSearch() throws Exception {
+			Page<Owner> tasks = new PageImpl<>(List.of(george(), new Owner()));
+			when(owners.findByLastNameStartingWith(eq(""), any(Pageable.class))).thenReturn(tasks);
+
+			mockMvc.perform(get("/owners?page=1").param("lastName", ""))
+				.andExpect(status().isOk())
+				.andExpect(view().name("owners/ownersList"));
+		}
+
+		@Test
+		void testProcessFindFormWithSpecialCharactersInSearch() throws Exception {
+			Page<Owner> tasks = new PageImpl<>(List.of());
+			when(owners.findByLastNameStartingWith(eq("O'Brien"), any(Pageable.class))).thenReturn(tasks);
+
+			mockMvc.perform(get("/owners?page=1").param("lastName", "O'Brien"))
+				.andExpect(status().isOk())
+				.andExpect(view().name("owners/findOwners"));
+		}
+
+		@Test
+		void testOwnerSearchPaginationMetadata() throws Exception {
+			// Create a larger dataset to test pagination metadata
+			List<Owner> allOwners = new java.util.ArrayList<>();
+			for (int i = 1; i <= 13; i++) {
+				Owner owner = new Owner();
+				owner.setId(i);
+				owner.setFirstName("Owner" + i);
+				owner.setLastName("Paginated" + i);
+				owner.setAddress(i + " Pagination St");
+				owner.setCity("PaginationCity");
+				owner.setTelephone(String.format("555%07d", i));
+				allOwners.add(owner);
+			}
+
+			// Test first page (page=1 in controller, 0 in Spring Data)
+			List<Owner> firstPageContent = allOwners.subList(0, 5);
+			Page<Owner> firstPage = new PageImpl<>(firstPageContent, Pageable.ofSize(5).withPage(0), 13);
+			when(owners.findByLastNameStartingWith(eq("Paginated"), any(Pageable.class))).thenReturn(firstPage);
+
+			mockMvc.perform(get("/owners").param("page", "1").param("lastName", "Paginated"))
+				.andExpect(status().isOk())
+				.andExpect(view().name("owners/ownersList"))
+				.andExpect(model().attribute("listOwners", hasSize(5)))
+				.andExpect(model().attribute("currentPage", is(1)))
+				.andExpect(model().attribute("totalPages", is(3)))
+				.andExpect(model().attribute("totalItems", is(13L)));
+
+			// Test middle page (page=2 in controller, 1 in Spring Data)
+			List<Owner> secondPageContent = allOwners.subList(5, 10);
+			Page<Owner> secondPage = new PageImpl<>(secondPageContent, Pageable.ofSize(5).withPage(1), 13);
+			when(owners.findByLastNameStartingWith(eq("Paginated"), any(Pageable.class))).thenReturn(secondPage);
+
+			mockMvc.perform(get("/owners").param("page", "2").param("lastName", "Paginated"))
+				.andExpect(status().isOk())
+				.andExpect(view().name("owners/ownersList"))
+				.andExpect(model().attribute("listOwners", hasSize(5)))
+				.andExpect(model().attribute("currentPage", is(2)))
+				.andExpect(model().attribute("totalPages", is(3)))
+				.andExpect(model().attribute("totalItems", is(13L)));
+
+			// Test last page (page=3 in controller, 2 in Spring Data)
+			List<Owner> lastPageContent = allOwners.subList(10, 13);
+			Page<Owner> lastPage = new PageImpl<>(lastPageContent, Pageable.ofSize(5).withPage(2), 13);
+			when(owners.findByLastNameStartingWith(eq("Paginated"), any(Pageable.class))).thenReturn(lastPage);
+
+			mockMvc.perform(get("/owners").param("page", "3").param("lastName", "Paginated"))
+				.andExpect(status().isOk())
+				.andExpect(view().name("owners/ownersList"))
+				.andExpect(model().attribute("listOwners", hasSize(3)))
+				.andExpect(model().attribute("currentPage", is(3)))
+				.andExpect(model().attribute("totalPages", is(3)))
+				.andExpect(model().attribute("totalItems", is(13L)));
+		}
+
 	}
 
 }
