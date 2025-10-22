@@ -208,4 +208,55 @@ class PetControllerTests {
 
 	}
 
+	/**
+	 * Additional tests for Pet boundary conditions and edge cases
+	 */
+	@Nested
+	class PetBoundaryTests {
+
+		// todo empty name
+
+		@Test
+		void testProcessCreationFormWithBirthDateToday() throws Exception {
+			mockMvc
+				.perform(post("/owners/{ownerId}/pets/new", TEST_OWNER_ID).param("name", "NewPet")
+					.param("type", "hamster")
+					.param("birthDate", LocalDate.now().toString()))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(view().name("redirect:/owners/{ownerId}"));
+		}
+
+		@Test
+		void testProcessCreationFormWithVeryOldBirthDate() throws Exception {
+			mockMvc
+				.perform(post("/owners/{ownerId}/pets/new", TEST_OWNER_ID).param("name", "OldPet")
+					.param("type", "hamster")
+					.param("birthDate", LocalDate.now().minusYears(20).toString()))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(view().name("redirect:/owners/{ownerId}"));
+		}
+
+		@Test
+		void testProcessCreationFormWithNameContainingNumbers() throws Exception {
+			mockMvc
+				.perform(post("/owners/{ownerId}/pets/new", TEST_OWNER_ID).param("name", "Rex2")
+					.param("type", "hamster")
+					.param("birthDate", "2020-01-01"))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(view().name("redirect:/owners/{ownerId}"));
+		}
+
+		@Test
+		void testProcessCreationFormWithVeryLongName() throws Exception {
+			String longName = "A".repeat(50);
+			mockMvc
+				.perform(post("/owners/{ownerId}/pets/new", TEST_OWNER_ID).param("name", longName)
+					.param("type", "hamster")
+					.param("birthDate", "2020-01-01"))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(view().name("redirect:/owners/{ownerId}"));
+		}
+
+	}
+
 }
